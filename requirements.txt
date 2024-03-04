@@ -1,0 +1,9 @@
+openai
+python-dotenv
+Python-IO
+firebase-admin
+pyaudio
+opencv-python
+opencv-python-headless 
+moviepy 
+sounddevice
