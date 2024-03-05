@@ -7,3 +7,5 @@ opencv-python
 opencv-python-headless 
 moviepy 
 sounddevice
+moviepy
+pygame
