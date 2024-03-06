@@ -17,10 +17,17 @@ import threading
 import time
 from functools import partial
 
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+cred = credentials.Certificate("./fb_secret.json")
+firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 dotenv_path = Path('.env')
 load_dotenv(dotenv_path=dotenv_path)
-video_path="test.mp4"
+video_path="final.mp4"
 api_key=os.environ["OPENAI_API"]
 print(api_key)
 
@@ -41,35 +48,6 @@ def play_video_segment(video_path, start_time, end_time):
 def play_video_segment_with_sound(video_path, start_time, end_time):
     video = VideoFileClip(video_path).subclip(start_time, end_time)
     video.preview()
-
-# def main():
-#     video_path = './test.mp4'
-#     start_time = 0  # Start time in seconds
-#     duration = 15.5  # Duration in seconds
-
-#     # Simulate a background task
-#     def background_task():
-#         while not condition_to_play_video():
-#             time.sleep(1)  # Check periodically
-#         # Once the condition is met, prepare data or signal the main thread in some way
-#         # Note: Direct video playback should not be initiated here
-
-#     # Start the background task
-#     threading.Thread(target=background_task).start()
-
-#     # Main thread loop - checks for signals to play video or other GUI tasks
-#     while True:
-#         # Check for a signal to play the video (simplified here for demonstration)
-#         if condition_to_play_video():
-#             play_video_segment_with_sound(video_path, start_time, start_time + duration)
-#             break  # Exit after playing, or adjust logic as needed for your application
-#         time.sleep(1)
-
-# if __name__ == '__main__':
-#     main()
-
-
-
 
 ##==========Find the right camera to use==========
 def find_usb_camera(max_index=10):
@@ -157,14 +135,15 @@ def face_present():
     
     
 ##==========Recording & Transcribing Voice==========
-def start_recording(num, recording_seconds=5):
+
+def start_recording(num, recording_seconds=5.0):  # Ensure recording_seconds is a float
     p = pyaudio.PyAudio()
-    FORMAT = pyaudio.paInt16  # Format of audio samples (16-bit signed integers)
-    CHANNELS = 1              # Number of audio channels (1 for mono, 2 for stereo)
-    RATE = 44100              # Sample rate (samples per second)
-    CHUNK = 1024              # Number of frames per buffer
-    RECORD_SECONDS = recording_seconds        # Duration of recording in seconds
-    
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 44100
+    CHUNK = 1024
+    RECORD_SECONDS = float(recording_seconds)  # Convert to float to ensure correct operation
+
     stream = p.open(format=FORMAT,
                     channels=CHANNELS,
                     rate=RATE,
@@ -174,9 +153,15 @@ def start_recording(num, recording_seconds=5):
     print("Recording...")
     
     frames = []
-    
-    for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+    total_frames = int(RATE / CHUNK * RECORD_SECONDS)  # Calculate total frames to capture
+    for _ in range(total_frames):
         data = stream.read(CHUNK)
+        frames.append(data)
+    
+    # Capture any remaining part of the recording period not covered by full chunks
+    remaining_frames = int((RATE * RECORD_SECONDS) % CHUNK)
+    if remaining_frames > 0:
+        data = stream.read(remaining_frames)
         frames.append(data)
     
     print("Recording finished.")
@@ -192,7 +177,7 @@ def start_recording(num, recording_seconds=5):
     wf.writeframes(b''.join(frames))
     wf.close()
     
-    print("Recording saved as", WAVE_OUTPUT_FILENAME)
+    print(f"Recording saved as {WAVE_OUTPUT_FILENAME}")
     
     return WAVE_OUTPUT_FILENAME
 
@@ -409,93 +394,130 @@ def handle_stt_result(db, prompt, num,transcription):
     db.append(f"Q{num}:{prompt},A:{transcription}")
     print("\n", "🫵", transcription, "\n", "--------------------------------------------------------", "\n")
 
+#=====Upload Data Point=====
+def upload_data_point(rumors, summarized_image_prompt, image_url):
+    doc_ref = db.collection('data_points').document()  # Creates a new document
+    doc_ref.set({
+        'rumors': rumors,
+        'summarized_image_prompt': summarized_image_prompt,
+        'image_url': image_url,
+        'timestamp':firestore.SERVER_TIMESTAMP
+    })
+    print("Data point uploaded successfully.")
 
+
+#=====Backgroun Video Loop=====
+def background_video_loop():
+    """Plays a specific background segment of a video repeatedly until stopped."""
+    while True:
+        play_video_segment(video_path, 121.9, 123.0)
+        if face_present():
+            break
+        time.sleep(1)  # Prevents the loop from running too fast, adjust as needed
 
 ##==========TOTAL TEST==========
 #different recording secs for diff questions
 #prompt with some example answers
 def main():
-    timeline={0:[15.0, 16.5, 16.5,20],
-              1:[20.5, 22, 22,28],
-              2:[28, 32, 32,47],
-              3:[47,51,51, 67],
-              4:[67, 73, 73, 89 ],
-              5:[89, 92, 92, 97],
-              6:[97, 99, 99, 104]}
+    timeline={    0: ['15.9', '16.67', '16.7', '20.73', 4.02],
+    1: ['20.77', '21.67', '21.7', '28.00', 6.65],
+    2: ['28.03', '32.57', '32.6', '47.23', 14.82],
+    3: ['47.27', '51.00', '51.03', '67.60', 16.28],
+    4: ['67.63', '73.67', '73.7', '89.23', 15.77],
+    5: ['89.27', '91.50', '91.53', '97.53', 6.00],
+    6: ['97.57', '98.30', '98.33', '104.73', 6.2]}
+
+    try:
+        while True:
+            # Start the background video loop in a separate thread
+            background_thread = threading.Thread(target=background_video_loop)
+            background_thread.start()
+
+            # Wait for the background thread to finish (i.e., a face is detected)
+            background_thread.join()
 
 
-    if face_present():
-        db=[]
-        id=1
-        #play intro
-        play_video_segment(video_path, 14, 15.5)
-        for num,prompt in enumerate(prompt_ls):
-            
-            callback_with_context = partial(handle_stt_result, db, prompt, num)
 
-            # Play the first specified segment
-            play_video_segment(video_path, timeline[num][0], timeline[num][1])
-            
-            # Start STT processing in the background for this segment
-            stt_thread = threading.Thread(target=stt_background_task, args=(num, 7, callback_with_context))
-            stt_thread.start()
-            
-            # After starting STT processing, immediately play the next segment
-            play_video_segment(video_path, timeline[num][2], timeline[num][3])
-            
-            # Assuming you wait for the STT thread if necessary
-            stt_thread.join()
+            if face_present():
+                db=[]
+                id=1
+                #play intro
+                #'01:03:05.35'
+                play_video_segment(video_path, 14.11, 15.8)
+                for num,prompt in enumerate(prompt_ls):
+                    
+                    callback_with_context = partial(handle_stt_result, db, prompt, num)
 
+                    # Play the first specified segment
+                    play_video_segment(video_path, timeline[num][0], timeline[num][1])
+                    
+                    # Start STT processing in the background for this segment
+                    stt_thread = threading.Thread(target=stt_background_task, args=(num, timeline[num][4], callback_with_context))
+                    stt_thread.start()
+                    
+                    # After starting STT processing, immediately play the next segment
+                    play_video_segment(video_path, timeline[num][2], timeline[num][3])
+                    
+                    # Assuming you wait for the STT thread if necessary
+                    stt_thread.join()
+
+                play_video_segment(video_path, 104.74, 123.40)        
+                #creates rumors
+                rumors=create_rumors(db)
                 
-        #creates rumors
-        rumors=create_rumors(db)
-        
-        #takes picture
-        captured_image, image_path = take_picture_with_webcam(id=1)
-        print("Image path:", image_path)
-        
-        #Import image
-        image = cv2.imread(image_path)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        def create_image(rumor_image_prompt):
-        
-            response = client.images.edit(
-            model="dall-e-2",
-            image=open(image_path, "rb"),
-            mask=open(masked_image_path, "rb"),
-            prompt=rumor_image_prompt,
-            n=1,
-            size="512x512"
-            )
-            image_url = response.data[0].url
-            return image_url
+                #takes picture
+                captured_image, image_path = take_picture_with_webcam(id=1)
+                print("Image path:", image_path)
+                
+                #Import image
+                image = cv2.imread(image_path)
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                
+                def create_image(rumor_image_prompt):
+                
+                    response = client.images.edit(
+                    model="dall-e-2",
+                    image=open(image_path, "rb"),
+                    mask=open(masked_image_path, "rb"),
+                    prompt=rumor_image_prompt,
+                    n=1,
+                    size="512x512"
+                    )
+                    image_url = response.data[0].url
+                    return image_url
 
 
-        #generate mask
-        masked_image_path = create_face_mask(image_path,1)
-        print(f"Masked image saved to: {masked_image_path}")
+                #generate mask
+                masked_image_path = create_face_mask(image_path,1)
+                print(f"Masked image saved to: {masked_image_path}")
 
-        #display pictures
-        im1 = Image.open(image_path)
-        im1.show()
-        
-        im2 = Image.open(masked_image_path)
-        im2.show()
+                # #display pictures
+                # im1 = Image.open(image_path)
+                # im1.show()
+                
+                # im2 = Image.open(masked_image_path)
+                # im2.show()
 
-        #create rumor image prompts 
-        rumor_image_prompt=create_rumor_image_prompt(rumors)
-        summarized_image_prompt=summarize_image_prompt(rumor_image_prompt)
-        print(summarized_image_prompt)
+                #create rumor image prompts 
+                rumor_image_prompt=create_rumor_image_prompt(rumors)
+                summarized_image_prompt=summarize_image_prompt(rumor_image_prompt)
+                print(summarized_image_prompt)
 
-        #create rumor image
-        image_url=create_image(rumor_image_prompt)
+                #create rumor image
+                image_url=create_image(rumor_image_prompt)
 
-        #open rumor image
-        response_rumor = requests.get(image_url)
-        img_rumor = Image.open(BytesIO(response_rumor.content))
-        
-        img_rumor.show()
+                upload_data_point(rumors, summarized_image_prompt, image_url)
+            else:
+                play_video_segment(video_path,121.9, 123.0)
+
+                # #open rumor image
+                # response_rumor = requests.get(image_url)
+                # img_rumor = Image.open(BytesIO(response_rumor.content))
+                
+                # img_rumor.show()
+     
+    except KeyboardInterrupt:
+        print("Program terminated by user.")
 
 
 if __name__ == '__main__':
@@ -504,73 +526,3 @@ if __name__ == '__main__':
     
     
 
-
-
-# ##==========Whole Program Run==========
-# #different recording secs for diff questions
-# #prompt with some example answers
-# if face_present():
-#     db=[]
-#     id=1
-#     for num,prompt in enumerate(prompt_ls):
-#         if num==0:
-#             print("\n","--------------------------------------------------------","\n", f"❓ {prompt}", "\n","\n")
-#             transcript=stt(num,recording_seconds=5)[1]
-#             print("\n", "🫵",transcript.text,"\n", "--------------------------------------------------------","\n")
-#             db.append(f"Q:{prompt},A:{transcript.text}")
-#         else:
-#             print("\n","--------------------------------------------------------","\n", f"❓ {prompt}", "\n","\n")
-#             transcript=stt(num,recording_seconds=10)[1]
-#             print("\n", "🫵",transcript.text,"\n", "--------------------------------------------------------","\n")
-#             db.append(f"Q:{prompt},A:{transcript.text}")
-    
-#     #creates rumors
-#     rumors=create_rumors(db)
-    
-#     #takes picture
-#     captured_image, image_path = take_picture_with_webcam(id=1)
-#     print("Image path:", image_path)
-    
-#     #Import image
-#     image = cv2.imread(image_path)
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-#     def create_image(rumor_image_prompt):
-    
-#         response = client.images.edit(
-#         model="dall-e-2",
-#         image=open(image_path, "rb"),
-#         mask=open(masked_image_path, "rb"),
-#         prompt=rumor_image_prompt,
-#         n=1,
-#         size="512x512"
-#         )
-#         image_url = response.data[0].url
-#         return image_url
-
-
-#     #generate mask
-#     masked_image_path = create_face_mask(image_path,1)
-#     print(f"Masked image saved to: {masked_image_path}")
-
-#     #display pictures
-#     im1 = Image.open(image_path)
-#     im1.show()
-    
-#     im2 = Image.open(masked_image_path)
-#     im2.show()
-
-#     #create rumor image prompts 
-#     rumor_image_prompt=create_rumor_image_prompt(rumors)
-#     summarized_image_prompt=summarize_image_prompt(rumor_image_prompt)
-#     print(summarized_image_prompt)
-
-#     #create rumor image
-#     image_url=create_image(rumor_image_prompt)
-
-#     #open rumor image
-#     response_rumor = requests.get(image_url)
-#     img_rumor = Image.open(BytesIO(response_rumor.content))
-    
-#     img_rumor.show()
-    
