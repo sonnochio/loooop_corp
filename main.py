@@ -16,18 +16,23 @@ from moviepy.editor import VideoFileClip
 import threading
 import time
 from functools import partial
-
+import io
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
+from datetime import datetime
 
 cred = credentials.Certificate("./fb_secret.json")
-firebase_admin.initialize_app(cred)
+firebase_admin.initialize_app(cred, {
+    'storageBucket': 'loooop-corp.appspot.com'  # Update this to your Cloud Storage bucket name
+})
+
 
 db = firestore.client()
+bucket = storage.bucket()
 
 dotenv_path = Path('.env')
 load_dotenv(dotenv_path=dotenv_path)
-video_path="final.mp4"
+video_path="final_resized.mp4"
 api_key=os.environ["OPENAI_API"]
 print(api_key)
 
@@ -394,12 +399,31 @@ def handle_stt_result(db, prompt, num,transcription):
     db.append(f"Q{num}:{prompt},A:{transcription}")
     print("\n", "🫵", transcription, "\n", "--------------------------------------------------------", "\n")
 
+
 #=====Upload Data Point=====
-def upload_data_point(rumors, summarized_image_prompt, image_url):
+def upload_image_to_storage(image, image_name):
+    """Uploads a PIL.Image to Cloud Storage."""
+    # Convert PIL.Image to bytes
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format='JPEG')  # You can change 'JPEG' to another format if needed
+    img_byte_arr = img_byte_arr.getvalue()
+
+    # Create a new blob in Cloud Storage
+    blob = bucket.blob(f'images/{image_name}')  # You can customize the path as needed
+    blob.upload_from_string(img_byte_arr, content_type='image/jpeg')
+
+    # Make the blob publicly viewable
+    blob.make_public()
+
+    # Return the public URL
+    return blob.public_url
+
+def upload_data_point(rumors, summarized_image_prompt, image_url, blob_url):
     doc_ref = db.collection('data_points').document()  # Creates a new document
     doc_ref.set({
         'rumors': rumors,
         'summarized_image_prompt': summarized_image_prompt,
+        'blob_url':blob_url,
         'image_url': image_url,
         'timestamp':firestore.SERVER_TIMESTAMP
     })
@@ -407,18 +431,16 @@ def upload_data_point(rumors, summarized_image_prompt, image_url):
 
 
 #=====Backgroun Video Loop=====
-def background_video_loop():
-    """Plays a specific background segment of a video repeatedly until stopped."""
-    while True:
+def play_background_loop():
+    """Function to loop a background video segment."""
+    while not face_present():
         play_video_segment(video_path, 121.9, 123.0)
-        if face_present():
-            break
-        time.sleep(1)  # Prevents the loop from running too fast, adjust as needed
+        time.sleep(0.1)  # Short sleep to prevent hogging CPU resources
 
-##==========TOTAL TEST==========
-#different recording secs for diff questions
-#prompt with some example answers
-def main():
+
+##=====Main Program Logic=====
+def main_program_logic():
+
     timeline={    0: ['15.9', '16.67', '16.7', '20.73', 4.02],
     1: ['20.77', '21.67', '21.7', '28.00', 6.65],
     2: ['28.03', '32.57', '32.6', '47.23', 14.82],
@@ -427,102 +449,105 @@ def main():
     5: ['89.27', '91.50', '91.53', '97.53', 6.00],
     6: ['97.57', '98.30', '98.33', '104.73', 6.2]}
 
+    db=[]
+    id=1
+    #play intro
+    #'01:03:05.35'
+    play_video_segment(video_path, 14.11, 15.8)
+    for num,prompt in enumerate(prompt_ls):
+        
+        callback_with_context = partial(handle_stt_result, db, prompt, num)
+
+        # Play the first specified segment
+        play_video_segment(video_path, timeline[num][0], timeline[num][1])
+        
+        # Start STT processing in the background for this segment
+        stt_thread = threading.Thread(target=stt_background_task, args=(num, timeline[num][4], callback_with_context))
+        stt_thread.start()
+        
+        # After starting STT processing, immediately play the next segment
+        play_video_segment(video_path, timeline[num][2], timeline[num][3])
+        
+        # Assuming you wait for the STT thread if necessary
+        stt_thread.join()
+
+    play_video_segment(video_path, 104.74, 123.40)    
+        
+    #creates rumors
+    rumors=create_rumors(db)
+    
+    #takes picture
+    captured_image, image_path = take_picture_with_webcam(id=1)
+    print("Image path:", image_path)
+    
+    #Import image
+    image = cv2.imread(image_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    def create_image(rumor_image_prompt):
+    
+        response = client.images.edit(
+        model="dall-e-2",
+        image=open(image_path, "rb"),
+        mask=open(masked_image_path, "rb"),
+        prompt=rumor_image_prompt,
+        n=1,
+        size="512x512"
+        )
+        image_url = response.data[0].url
+        return image_url
+
+
+    #generate mask
+    masked_image_path = create_face_mask(image_path,1)
+    print(f"Masked image saved to: {masked_image_path}")
+
+    #create rumor image prompts 
+    rumor_image_prompt=create_rumor_image_prompt(rumors)
+    summarized_image_prompt=summarize_image_prompt(rumor_image_prompt)
+    print(summarized_image_prompt)
+
+    #create rumor image
+    image_url=create_image(rumor_image_prompt)
+
+        #open rumor image
+    response_rumor = requests.get(image_url)
+    img_rumor = Image.open(BytesIO(response_rumor.content))
+    
+
+    blob_url=upload_image_to_storage(img_rumor, image_name=f'{datetime.now()}.jpg')
+
+    upload_data_point(rumors, summarized_image_prompt, image_url, blob_url)
+
+
+
+
+
+##==========TOTAL TEST==========
+#different recording secs for diff questions
+#prompt with some example answers
+def main():
     try:
         while True:
-            # Start the background video loop in a separate thread
-            background_thread = threading.Thread(target=background_video_loop)
-            background_thread.start()
-
-            # Wait for the background thread to finish (i.e., a face is detected)
-            background_thread.join()
-
-
-
-            if face_present():
-                db=[]
-                id=1
-                #play intro
-                #'01:03:05.35'
-                play_video_segment(video_path, 14.11, 15.8)
-                for num,prompt in enumerate(prompt_ls):
-                    
-                    callback_with_context = partial(handle_stt_result, db, prompt, num)
-
-                    # Play the first specified segment
-                    play_video_segment(video_path, timeline[num][0], timeline[num][1])
-                    
-                    # Start STT processing in the background for this segment
-                    stt_thread = threading.Thread(target=stt_background_task, args=(num, timeline[num][4], callback_with_context))
-                    stt_thread.start()
-                    
-                    # After starting STT processing, immediately play the next segment
-                    play_video_segment(video_path, timeline[num][2], timeline[num][3])
-                    
-                    # Assuming you wait for the STT thread if necessary
-                    stt_thread.join()
-
-                play_video_segment(video_path, 104.74, 123.40)        
-                #creates rumors
-                rumors=create_rumors(db)
-                
-                #takes picture
-                captured_image, image_path = take_picture_with_webcam(id=1)
-                print("Image path:", image_path)
-                
-                #Import image
-                image = cv2.imread(image_path)
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                
-                def create_image(rumor_image_prompt):
-                
-                    response = client.images.edit(
-                    model="dall-e-2",
-                    image=open(image_path, "rb"),
-                    mask=open(masked_image_path, "rb"),
-                    prompt=rumor_image_prompt,
-                    n=1,
-                    size="512x512"
-                    )
-                    image_url = response.data[0].url
-                    return image_url
-
-
-                #generate mask
-                masked_image_path = create_face_mask(image_path,1)
-                print(f"Masked image saved to: {masked_image_path}")
-
-                # #display pictures
-                # im1 = Image.open(image_path)
-                # im1.show()
-                
-                # im2 = Image.open(masked_image_path)
-                # im2.show()
-
-                #create rumor image prompts 
-                rumor_image_prompt=create_rumor_image_prompt(rumors)
-                summarized_image_prompt=summarize_image_prompt(rumor_image_prompt)
-                print(summarized_image_prompt)
-
-                #create rumor image
-                image_url=create_image(rumor_image_prompt)
-
-                upload_data_point(rumors, summarized_image_prompt, image_url)
-            else:
-                play_video_segment(video_path,121.9, 123.0)
-
-                # #open rumor image
-                # response_rumor = requests.get(image_url)
-                # img_rumor = Image.open(BytesIO(response_rumor.content))
-                
-                # img_rumor.show()
-     
+            print("Checking for face presence...")
+            while not face_present():
+                # Optional: Sleep to reduce CPU usage, adjust the time as needed
+                time.sleep(1)
+            
+            print("Face detected. Executing program logic.")
+            # Execute the main program logic after a face is detected
+            main_program_logic()
+            
+            # After completing main_program_logic, the program will loop back
+            # and start checking for a face again
+            
     except KeyboardInterrupt:
         print("Program terminated by user.")
 
+    
 
 if __name__ == '__main__':
     main()
    
     
     
-

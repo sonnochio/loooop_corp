@@ -10,3 +10,6 @@ sounddevice
 moviepy
 pygame
 firebase-admin
+google-cloud-storage
+DateTime
+screeninfo

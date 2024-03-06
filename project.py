@@ -2,70 +2,61 @@ import io
 import requests
 from PIL import Image
 import matplotlib.pyplot as plt
-from firebase_admin import firestore,credentials
+from firebase_admin import firestore, credentials
 import firebase_admin
-import io
-import queue
-import requests
 import time
-from PIL import Image
-import matplotlib.pyplot as plt
-from firebase_admin import firestore
 
-# Initialize Cloud Firestore (Assuming Firebase Admin SDK has been initialized)
-
-
+# Initialize Cloud Firestore
 cred = credentials.Certificate('fb_secret.json')
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-def fetch_latest_data_point():
-    # Fetch the most recent document from 'data_points' collection
-    docs = db.collection('data_points').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1).stream()
+# This function fetches the latest data point from 'data_points' collection
+def fetch_latest_data_point(last_timestamp=None):
+    query = db.collection('data_points').order_by('timestamp', direction=firestore.Query.DESCENDING)
+    if last_timestamp:
+        query = query.where('timestamp', '>', last_timestamp)
+    docs = query.limit(1).stream()
 
-    latest_data = None
     for doc in docs:
-        latest_data = doc.to_dict()
-    return latest_data
+        return doc.to_dict()
+    return None
 
+# This function displays the graphics based on the fetched data
 def display_data_graphics(data):
-    # Fetch image from URL
-    response = requests.get(data['image_url'])
+    response = requests.get(data['blob_url'])
     image = Image.open(io.BytesIO(response.content))
+    rumors_text = "\n\n\n".join(data['rumors'])
 
-    # Set up the plot
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    fig, axs = plt.subplots(1, 2, figsize=(20, 10), gridspec_kw={'width_ratios': [1, 1]})
+    fig.patch.set_facecolor('black')
 
-    # Left column: Display all text in rumors
-    rumors_text = "\n".join(data['rumors'])
-    axs[0].text(0.5, 0.5, rumors_text, verticalalignment='center', horizontalalignment='center', fontsize=12, wrap=True)
+    axs[0].text(0, 1, rumors_text, ha='left', va='top', fontsize=20, color='white', 
+                wrap=True, transform=axs[0].transAxes, family='monospace')
+    axs[0].set_facecolor('black')
     axs[0].axis('off')
 
-    # Right column: Display the image at the top and the summarized_image_prompt at the bottom
     axs[1].imshow(image)
-    axs[1].text(0.5, -0.1, data['summarized_image_prompt'], verticalalignment='top', horizontalalignment='center', transform=axs[1].transAxes, fontsize=12, wrap=True)
     axs[1].axis('off')
+    axs[1].set_facecolor('black')
 
+    summarized_text = data['summarized_image_prompt']
+    axs[1].text(0.5, 0, summarized_text, ha='center', va='top', fontsize=20, color='white', 
+                wrap=True, transform=axs[1].transAxes, family='monospace')
+
+    plt.tight_layout()
     plt.show()
 
 def main():
-    data_queue = queue.Queue(maxsize=10)  # Initialize a queue to store the data points
+    last_timestamp = None
 
     while True:
-        latest_data = fetch_latest_data_point()
-        if latest_data is not None:
-            # Add the latest data point to the queue
-            if not data_queue.full():
-                data_queue.put(latest_data)
-            else:
-                data_queue.get()  # Remove the oldest item if the queue is full
-                data_queue.put(latest_data)
-
-        if not data_queue.empty():
-            current_data = data_queue.queue[-1]  # Always use the most recent data point
-            display_data_graphics(current_data)
-            time.sleep(15)  # Display each data point for 15 seconds
+        latest_data = fetch_latest_data_point(last_timestamp)
+        if latest_data:
+            display_data_graphics(latest_data)
+            last_timestamp = latest_data['timestamp']
+        time.sleep(15)  # Check for new data points every 15 seconds
 
 if __name__ == '__main__':
     main()
