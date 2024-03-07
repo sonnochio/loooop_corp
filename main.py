@@ -305,7 +305,7 @@ def take_picture_with_webcam(id):
         img_cropped = img.crop((left, top, right, bottom))
         crop_path = f"./crop/{id}.png"
         img_cropped.save(crop_path)
-        img_cropped.show()
+  
 
     print(f"Cropped picture saved successfully: {crop_path}")
 
@@ -358,7 +358,7 @@ def create_face_mask(image_path, id):
         img_cropped = img.crop((left, top, right, bottom))
         crop_path = f"./crop_mask/{id}.png"
         img_cropped.save(crop_mask_path)
-        img_cropped.show()
+    
         
     return crop_mask_path
     
