@@ -453,7 +453,7 @@ def main_program_logic():
     id=1
     #play intro
     #'01:03:05.35'
-    play_video_segment(video_path, 14.11, 15.8)
+    play_video_segment(video_path, 0.00, 15.8)
     for num,prompt in enumerate(prompt_ls):
         
         callback_with_context = partial(handle_stt_result, db, prompt, num)
