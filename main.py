@@ -21,6 +21,13 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from datetime import datetime
 
+
+audio_directory = "./audio"
+if not os.path.exists(audio_directory):
+    os.makedirs(audio_directory)
+
+
+
 cred = credentials.Certificate("./fb_secret.json")
 firebase_admin.initialize_app(cred, {
     'storageBucket': 'loooop-corp.appspot.com'  # Update this to your Cloud Storage bucket name

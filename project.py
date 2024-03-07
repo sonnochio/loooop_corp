@@ -6,6 +6,8 @@ from firebase_admin import firestore, credentials
 import firebase_admin
 import time
 
+
+
 # Initialize Cloud Firestore
 cred = credentials.Certificate('fb_secret.json')
 firebase_admin.initialize_app(cred)
