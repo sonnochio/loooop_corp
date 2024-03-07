@@ -1,3 +1,4 @@
+
 import pyaudio
 import wave
 import cv2
@@ -21,11 +22,20 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage
 from datetime import datetime
 
+def ensure_directories_exist():
+    directories = [
+        "./audio",
+        "./pictures",
+        "./crop",
+        "./masks",
+        "./crop_mask"
+    ]
+    for dir_path in directories:
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+            print(f"Directory created: {dir_path}")
 
-audio_directory = "./audio"
-if not os.path.exists(audio_directory):
-    os.makedirs(audio_directory)
-
+ensure_directories_exist()
 
 
 cred = credentials.Certificate("./fb_secret.json")
@@ -460,7 +470,10 @@ def main_program_logic():
     id=1
     #play intro
     #'01:03:05.35'
-    play_video_segment(video_path, 0.00, 15.8)
+    #takes picture
+    captured_image, image_path = take_picture_with_webcam(id=1)
+    print("Image path:", image_path)
+    play_video_segment(video_path, 0.0, 15.8)
     for num,prompt in enumerate(prompt_ls):
         
         callback_with_context = partial(handle_stt_result, db, prompt, num)
@@ -483,9 +496,7 @@ def main_program_logic():
     #creates rumors
     rumors=create_rumors(db)
     
-    #takes picture
-    captured_image, image_path = take_picture_with_webcam(id=1)
-    print("Image path:", image_path)
+
     
     #Import image
     image = cv2.imread(image_path)
@@ -558,3 +569,4 @@ if __name__ == '__main__':
    
     
     
+
