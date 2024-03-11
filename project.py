@@ -39,12 +39,13 @@ def display_data_graphics(data):
 
     response = requests.get(data['blob_url'])
     image = Image.open(io.BytesIO(response.content))
-    rumors_text = "\n\n\n".join(data['rumors'])
+    rumors_text = "\n\n".join(data['rumors'])  # Adjusted for potentially better spacing
 
-    fig, axs = plt.subplots(1, 2, figsize=(20, 10), gridspec_kw={'width_ratios': [1, 1]})
+    fig, axs = plt.subplots(1, 2, figsize=(24, 12), gridspec_kw={'width_ratios': [3, 2]})  # Adjust figure size and ratio
     fig.patch.set_facecolor('black')
 
-    axs[0].text(0, 1, rumors_text, ha='left', va='top', fontsize=20, color='white', 
+    # Adjust text position and alignment
+    axs[0].text(0.05, 0.95, rumors_text, ha='left', va='top', fontsize=16, color='white', 
                 wrap=True, transform=axs[0].transAxes, family='monospace')
     axs[0].set_facecolor('black')
     axs[0].axis('off')
@@ -54,11 +55,13 @@ def display_data_graphics(data):
     axs[1].set_facecolor('black')
 
     summarized_text = data['summarized_image_prompt']
-    axs[1].text(0.5, 0, summarized_text, ha='center', va='top', fontsize=20, color='white', 
+    axs[1].text(0.5, -0.05, summarized_text, ha='center', va='top', fontsize=16, color='white', 
                 wrap=True, transform=axs[1].transAxes, family='monospace')
 
+    plt.tight_layout()  # Apply tight layout to adjust subplots
     plt.show(block=False)  # Display the figure without blocking
     plt.pause(0.1)  # Short pause to ensure the plot updates
+
 
 # Function to fetch data and add it to the queue
 def fetch_and_enqueue_data():

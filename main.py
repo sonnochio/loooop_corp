@@ -528,7 +528,7 @@ def main_program_logic():
     #create rumor image
     image_url=create_image(rumor_image_prompt)
 
-        #open rumor image
+    #open rumor image
     response_rumor = requests.get(image_url)
     img_rumor = Image.open(BytesIO(response_rumor.content))
     
