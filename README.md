@@ -1,8 +1,8 @@
 # LOOOOOP Corp.
 
-RumorGenerator is a sophisticated interactive exhibition framework designed by LOOOOOP Corp to highlight the ethical implications and potential misuse of AI when leveraging non-consensual human data. By simulating an environment where personal information is disguisedly collected and used to generate personalized rumors, the project underscores the significance of privacy, consent, and transparency in AI applications.
+LOOOOOP Corp. is a sophisticated interactive exhibition framework designed by LOOOOOP to highlight the ethical implications and potential misuse of AI when leveraging non-consensual human data. By simulating an environment where personal information is disguisedly collected and used to generate personalized rumors, the project underscores the significance of privacy, consent, and transparency in AI applications.
 
-The core of RumorGenerator, `main.py`, utilizes advanced AI models to process personal data collected from participants, generating rumors that are both textual and visual. These rumors are then projected in an exhibition setup, engaging visitors through a narrative that seamlessly blends technology with art to provoke thought on digital ethics.
+The core tech is a RumorGenerator, `main.py`, utilizes advanced AI models to process personal data collected from participants, generating rumors that are both textual and visual. These rumors are then projected in an exhibition setup, engaging visitors through a narrative that seamlessly blends technology with art to provoke thought on digital ethics.
 
 ## Features
 
